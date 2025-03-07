@@ -24,8 +24,8 @@ A Python-based network scanning tool with a Qt GUI interface. This tool provides
 
 ## Clone the repository:
 ```sh
-git clone <repository_url>
-cd <repository_name>
+git clone https://github.com/ZararSW/Network-Scanner
+cd Network-Scanner
 ```
 
 ## Install required dependencies:
@@ -41,7 +41,7 @@ python main.py
 # Usage
 
 ### Select Network Interface:
-Choose the network interface to scan from the dropdown menu.
+Choose the network interface to scan from the drop-down menu.
 
 ### Configure Scan Options:
 Set thread count and enable/disable advanced features.
