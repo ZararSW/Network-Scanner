@@ -35,7 +35,7 @@ pip install -r requirements.txt
 
 ## Run the application:
 ```sh
-python main.py
+python3 network-scanner.py
 ```
 
 # Usage
