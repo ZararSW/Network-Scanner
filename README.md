@@ -37,6 +37,10 @@ pip install -r requirements.txt
 ```sh
 python3 network-scanner.py
 ```
+## With administrative privileges (for better scanning):
+```sh
+sudo python3 network-scanner.py
+```
 
 # Usage
 
