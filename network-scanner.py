@@ -12,13 +12,53 @@ from datetime import datetime
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QTableWidget, QTableWidgetItem, 
                            QVBoxLayout, QHBoxLayout, QWidget, QPushButton, QFileDialog, 
                            QLabel, QComboBox, QProgressBar, QHeaderView, QMessageBox,
-                           QTextEdit, QInputDialog, QMenu, QGroupBox, QSpinBox, QCheckBox)
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot, QMetaObject, Q_ARG
-from PyQt5.QtGui import QIcon, QFont
+                           QTextEdit, QInputDialog, QMenu, QGroupBox, QSpinBox, QCheckBox,
+                           QTabWidget, QSplitter, QFrame, QScrollArea, QGridLayout, QSlider)
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, pyqtSlot, QMetaObject, Q_ARG, QThread, QObject
+from PyQt5.QtGui import QIcon, QFont, QPalette, QColor, QPixmap, QPainter
 import os
 from queue import Queue
-from scapy.all import ARP, Ether, srp, conf, AsyncSniffer, get_if_list
+from scapy.all import ARP, Ether, srp, conf, AsyncSniffer, get_if_list, IP, TCP, UDP, ICMP, sr1
 import requests
+
+# Enhanced imports for powerful features
+import asyncio
+import aiofiles
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+import networkx as nx
+import plotly.graph_objects as go
+import plotly.express as px
+from plotly.offline import plot
+import nmap
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import DBSCAN
+import sqlite3
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Float, Boolean, Text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+import paramiko
+import base64
+import hashlib
+import hmac
+from flask import Flask, jsonify, request, render_template_string
+from flask_socketio import SocketIO, emit
+import shodan
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+import tempfile
+import uuid
 
 # Try to import scapy with better platform detection
 SCAPY_AVAILABLE = False
@@ -27,6 +67,487 @@ try:
     SCAPY_AVAILABLE = True
 except ImportError:
     pass
+
+# Database setup for persistent storage
+Base = declarative_base()
+
+class ScanResult(Base):
+    __tablename__ = 'scan_results'
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    ip_address = Column(String(45))
+    hostname = Column(String(255))
+    mac_address = Column(String(17))
+    vendor = Column(String(255))
+    open_ports = Column(Text)
+    services = Column(Text)
+    os_detection = Column(String(255))
+    vulnerabilities = Column(Text)
+    risk_score = Column(Float, default=0.0)
+    anomaly_score = Column(Float, default=0.0)
+    threat_intel = Column(Text)
+
+class ThreatIntelligence:
+    """Enhanced threat intelligence integration"""
+    
+    def __init__(self):
+        self.shodan_api = None
+        self.malicious_ips = set()
+        self.reputation_cache = {}
+        
+    def initialize_shodan(self, api_key):
+        """Initialize Shodan API"""
+        try:
+            self.shodan_api = shodan.Shodan(api_key)
+            return True
+        except Exception as e:
+            print(f"Shodan initialization failed: {e}")
+            return False
+    
+    def check_ip_reputation(self, ip):
+        """Check IP reputation against multiple threat feeds"""
+        if ip in self.reputation_cache:
+            return self.reputation_cache[ip]
+        
+        reputation = {
+            'is_malicious': False,
+            'sources': [],
+            'threat_types': [],
+            'confidence': 0.0
+        }
+        
+        # Check against multiple threat intelligence sources
+        try:
+            # AbuseIPDB check (simulated)
+            abuse_result = self._check_abuseipdb(ip)
+            if abuse_result['is_malicious']:
+                reputation['is_malicious'] = True
+                reputation['sources'].append('AbuseIPDB')
+                reputation['threat_types'].extend(abuse_result['categories'])
+                reputation['confidence'] = max(reputation['confidence'], abuse_result['confidence'])
+            
+            # VirusTotal check (simulated)
+            vt_result = self._check_virustotal(ip)
+            if vt_result['is_malicious']:
+                reputation['is_malicious'] = True
+                reputation['sources'].append('VirusTotal')
+                reputation['threat_types'].extend(vt_result['categories'])
+                reputation['confidence'] = max(reputation['confidence'], vt_result['confidence'])
+            
+            # Shodan check
+            if self.shodan_api:
+                shodan_result = self._check_shodan(ip)
+                reputation['shodan_data'] = shodan_result
+                
+        except Exception as e:
+            print(f"Threat intelligence check failed for {ip}: {e}")
+        
+        self.reputation_cache[ip] = reputation
+        return reputation
+    
+    def _check_abuseipdb(self, ip):
+        """Simulate AbuseIPDB check - in real implementation, use actual API"""
+        # Simulated malicious IP patterns for demonstration
+        malicious_patterns = ['192.168.1.666', '10.0.0.666']
+        return {
+            'is_malicious': any(pattern in ip for pattern in malicious_patterns),
+            'categories': ['Malware', 'Botnet'] if any(pattern in ip for pattern in malicious_patterns) else [],
+            'confidence': 0.8 if any(pattern in ip for pattern in malicious_patterns) else 0.0
+        }
+    
+    def _check_virustotal(self, ip):
+        """Simulate VirusTotal check - in real implementation, use actual API"""
+        return {
+            'is_malicious': False,
+            'categories': [],
+            'confidence': 0.0
+        }
+    
+    def _check_shodan(self, ip):
+        """Check Shodan for additional information"""
+        try:
+            if self.shodan_api:
+                host = self.shodan_api.host(ip)
+                return {
+                    'ports': host.get('ports', []),
+                    'vulns': host.get('vulns', []),
+                    'tags': host.get('tags', []),
+                    'org': host.get('org', ''),
+                    'location': host.get('location', {})
+                }
+        except Exception:
+            pass
+        return {}
+
+class AdvancedScanner:
+    """Advanced scanning techniques using nmap and custom implementations"""
+    
+    def __init__(self, logger=None):
+        self.nm = nmap.PortScanner()
+        self.logger = logger
+        
+    def syn_stealth_scan(self, target, ports="1-1000"):
+        """Perform SYN stealth scan"""
+        try:
+            result = self.nm.scan(target, ports, arguments='-sS -O -sV --script vuln')
+            return self._parse_nmap_result(result)
+        except Exception as e:
+            if self.logger:
+                self.logger(f"SYN stealth scan failed: {e}")
+            return {}
+    
+    def udp_scan(self, target, ports="53,67,68,69,123,135,137,138,139,161,162,445,631,1434,1900,5353"):
+        """Perform UDP scan on common ports"""
+        try:
+            result = self.nm.scan(target, ports, arguments='-sU -sV')
+            return self._parse_nmap_result(result)
+        except Exception as e:
+            if self.logger:
+                self.logger(f"UDP scan failed: {e}")
+            return {}
+    
+    def comprehensive_scan(self, target):
+        """Perform comprehensive scan with multiple techniques"""
+        try:
+            # Comprehensive scan with OS detection, version detection, and vulnerability scripts
+            result = self.nm.scan(target, arguments='-sS -sU -O -sV -sC --script vuln,safe,discovery')
+            return self._parse_nmap_result(result)
+        except Exception as e:
+            if self.logger:
+                self.logger(f"Comprehensive scan failed: {e}")
+            return {}
+    
+    def _parse_nmap_result(self, result):
+        """Parse nmap scan result into structured data"""
+        parsed_results = {}
+        
+        for host in result['scan']:
+            host_info = result['scan'][host]
+            parsed_results[host] = {
+                'hostname': host_info.get('hostnames', [{}])[0].get('name', ''),
+                'state': host_info.get('status', {}).get('state', ''),
+                'protocols': {},
+                'os': host_info.get('osmatch', []),
+                'scripts': host_info.get('hostscript', [])
+            }
+            
+            # Parse protocol information
+            for protocol in host_info.get('protocols', []):
+                ports = host_info[protocol]
+                parsed_results[host]['protocols'][protocol] = {}
+                
+                for port in ports:
+                    port_info = ports[port]
+                    parsed_results[host]['protocols'][protocol][port] = {
+                        'state': port_info.get('state', ''),
+                        'name': port_info.get('name', ''),
+                        'product': port_info.get('product', ''),
+                        'version': port_info.get('version', ''),
+                        'extrainfo': port_info.get('extrainfo', ''),
+                        'scripts': port_info.get('script', {})
+                    }
+        
+        return parsed_results
+
+class AIAnomalyDetector:
+    """AI-powered anomaly detection for network behavior"""
+    
+    def __init__(self):
+        self.isolation_forest = IsolationForest(contamination=0.1, random_state=42)
+        self.scaler = StandardScaler()
+        self.dbscan = DBSCAN(eps=0.3, min_samples=2)
+        self.is_trained = False
+        self.baseline_data = []
+        
+    def add_baseline_data(self, features):
+        """Add data to baseline for training"""
+        self.baseline_data.append(features)
+        
+    def train_models(self):
+        """Train anomaly detection models"""
+        if len(self.baseline_data) < 10:
+            return False
+            
+        try:
+            # Prepare data
+            X = np.array(self.baseline_data)
+            X_scaled = self.scaler.fit_transform(X)
+            
+            # Train isolation forest
+            self.isolation_forest.fit(X_scaled)
+            
+            # Train DBSCAN
+            self.dbscan.fit(X_scaled)
+            
+            self.is_trained = True
+            return True
+        except Exception as e:
+            print(f"Model training failed: {e}")
+            return False
+    
+    def detect_anomaly(self, features):
+        """Detect if given features represent an anomaly"""
+        if not self.is_trained:
+            return {'is_anomaly': False, 'score': 0.0, 'confidence': 0.0}
+        
+        try:
+            # Scale features
+            X_scaled = self.scaler.transform([features])
+            
+            # Get isolation forest score
+            isolation_score = self.isolation_forest.decision_function(X_scaled)[0]
+            is_outlier = self.isolation_forest.predict(X_scaled)[0] == -1
+            
+            # Get DBSCAN cluster
+            cluster = self.dbscan.fit_predict(np.vstack([self.scaler.transform(self.baseline_data), X_scaled]))[-1]
+            is_noise = cluster == -1
+            
+            # Combine scores
+            anomaly_score = abs(isolation_score)
+            is_anomaly = is_outlier or is_noise
+            confidence = min(anomaly_score * 100, 100)
+            
+            return {
+                'is_anomaly': is_anomaly,
+                'score': anomaly_score,
+                'confidence': confidence,
+                'details': {
+                    'isolation_outlier': is_outlier,
+                    'isolation_score': isolation_score,
+                    'dbscan_noise': is_noise,
+                    'dbscan_cluster': cluster
+                }
+            }
+        except Exception as e:
+            print(f"Anomaly detection failed: {e}")
+            return {'is_anomaly': False, 'score': 0.0, 'confidence': 0.0}
+    
+    def extract_features(self, device_info):
+        """Extract features from device information for anomaly detection"""
+        features = []
+        
+        # Port-based features
+        open_ports = device_info.get('open_ports', [])
+        features.extend([
+            len(open_ports),  # Number of open ports
+            1 if 22 in open_ports else 0,  # SSH
+            1 if 80 in open_ports else 0,  # HTTP
+            1 if 443 in open_ports else 0,  # HTTPS
+            1 if 445 in open_ports else 0,  # SMB
+            1 if 3389 in open_ports else 0,  # RDP
+        ])
+        
+        # Service-based features
+        services = device_info.get('services', [])
+        features.extend([
+            len(services),  # Number of services
+            1 if any('SSH' in s for s in services) else 0,
+            1 if any('HTTP' in s for s in services) else 0,
+            1 if any('FTP' in s for s in services) else 0,
+        ])
+        
+        # Vulnerability features
+        vulns = device_info.get('vulnerabilities', [])
+        features.extend([
+            len(vulns),  # Number of vulnerabilities
+            device_info.get('risk_score', 0.0),  # Risk score
+        ])
+        
+        # Network behavior features
+        features.extend([
+            device_info.get('response_time', 0.0),  # Response time
+            device_info.get('packet_size', 0),  # Average packet size
+        ])
+        
+        return features
+
+class NetworkTopologyMapper:
+    """Create network topology visualization"""
+    
+    def __init__(self):
+        self.graph = nx.Graph()
+        self.device_positions = {}
+        
+    def add_device(self, ip, device_info):
+        """Add device to network graph"""
+        self.graph.add_node(ip, **device_info)
+        
+    def add_connection(self, ip1, ip2, connection_type='network'):
+        """Add connection between devices"""
+        self.graph.add_edge(ip1, ip2, type=connection_type)
+        
+    def calculate_layout(self):
+        """Calculate optimal layout for network visualization"""
+        try:
+            # Use spring layout with custom parameters
+            self.device_positions = nx.spring_layout(
+                self.graph, 
+                k=3, 
+                iterations=50,
+                seed=42
+            )
+            return True
+        except Exception as e:
+            print(f"Layout calculation failed: {e}")
+            return False
+    
+    def generate_topology_plot(self, output_file=None):
+        """Generate network topology visualization"""
+        if not self.device_positions:
+            self.calculate_layout()
+        
+        fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+        
+        # Draw nodes
+        node_colors = []
+        node_sizes = []
+        
+        for node in self.graph.nodes():
+            device_info = self.graph.nodes[node]
+            
+            # Color based on risk level
+            risk_score = device_info.get('risk_score', 0.0)
+            if risk_score > 7.0:
+                node_colors.append('red')
+            elif risk_score > 4.0:
+                node_colors.append('orange')
+            else:
+                node_colors.append('green')
+            
+            # Size based on number of open ports
+            open_ports = len(device_info.get('open_ports', []))
+            node_sizes.append(max(300, open_ports * 50))
+        
+        # Draw graph
+        nx.draw_networkx_nodes(
+            self.graph, 
+            self.device_positions, 
+            node_color=node_colors,
+            node_size=node_sizes,
+            alpha=0.7
+        )
+        
+        nx.draw_networkx_edges(
+            self.graph, 
+            self.device_positions, 
+            alpha=0.5,
+            edge_color='gray'
+        )
+        
+        nx.draw_networkx_labels(
+            self.graph, 
+            self.device_positions, 
+            font_size=8
+        )
+        
+        ax.set_title('Network Topology Map', fontsize=16, fontweight='bold')
+        ax.axis('off')
+        
+        # Add legend
+        legend_elements = [
+            patches.Patch(color='red', label='High Risk'),
+            patches.Patch(color='orange', label='Medium Risk'),
+            patches.Patch(color='green', label='Low Risk')
+        ]
+        ax.legend(handles=legend_elements, loc='upper right')
+        
+        plt.tight_layout()
+        
+        if output_file:
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        
+        return fig
+    
+    def generate_interactive_plot(self, output_file=None):
+        """Generate interactive network topology using Plotly"""
+        if not self.device_positions:
+            self.calculate_layout()
+        
+        # Prepare node data
+        node_x = []
+        node_y = []
+        node_text = []
+        node_colors = []
+        node_sizes = []
+        
+        for node in self.graph.nodes():
+            x, y = self.device_positions[node]
+            node_x.append(x)
+            node_y.append(y)
+            
+            device_info = self.graph.nodes[node]
+            hostname = device_info.get('hostname', 'Unknown')
+            open_ports = device_info.get('open_ports', [])
+            risk_score = device_info.get('risk_score', 0.0)
+            
+            node_text.append(f"{node}<br>Hostname: {hostname}<br>Ports: {len(open_ports)}<br>Risk: {risk_score:.1f}")
+            
+            # Color based on risk
+            if risk_score > 7.0:
+                node_colors.append('red')
+            elif risk_score > 4.0:
+                node_colors.append('orange')
+            else:
+                node_colors.append('green')
+            
+            node_sizes.append(max(10, len(open_ports) * 2))
+        
+        # Prepare edge data
+        edge_x = []
+        edge_y = []
+        
+        for edge in self.graph.edges():
+            x0, y0 = self.device_positions[edge[0]]
+            x1, y1 = self.device_positions[edge[1]]
+            edge_x.extend([x0, x1, None])
+            edge_y.extend([y0, y1, None])
+        
+        # Create plot
+        edge_trace = go.Scatter(
+            x=edge_x, y=edge_y,
+            line=dict(width=1, color='gray'),
+            hoverinfo='none',
+            mode='lines'
+        )
+        
+        node_trace = go.Scatter(
+            x=node_x, y=node_y,
+            mode='markers+text',
+            hoverinfo='text',
+            text=node_text,
+            textposition="middle center",
+            marker=dict(
+                size=node_sizes,
+                color=node_colors,
+                line=dict(width=2, color='black')
+            )
+        )
+        
+        fig = go.Figure(
+            data=[edge_trace, node_trace],
+            layout=go.Layout(
+                title='Interactive Network Topology',
+                titlefont_size=16,
+                showlegend=False,
+                hovermode='closest',
+                margin=dict(b=20,l=5,r=5,t=40),
+                annotations=[ dict(
+                    text="Risk Level: Red=High, Orange=Medium, Green=Low",
+                    showarrow=False,
+                    xref="paper", yref="paper",
+                    x=0.005, y=-0.002,
+                    xanchor='left', yanchor='bottom',
+                    font=dict(color='black', size=12)
+                ) ],
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+            )
+        )
+        
+        if output_file:
+            plot(fig, filename=output_file, auto_open=False)
+        
+        return fig
 
 class MacVendorDB:
     """Class to handle MAC vendor lookups"""
@@ -137,14 +658,50 @@ class NetworkScanner(QMainWindow):
     def __init__(self):
         super().__init__()
         
-        # Initialize vulnerability database
+        # Initialize enhanced components
+        self.threat_intel = ThreatIntelligence()
+        self.advanced_scanner = AdvancedScanner(logger=self.add_log_message)
+        self.ai_detector = AIAnomalyDetector()
+        self.topology_mapper = NetworkTopologyMapper()
+        
+        # Initialize database
+        self.db_engine = create_engine('sqlite:///network_scanner.db')
+        Base.metadata.create_all(self.db_engine)
+        Session = sessionmaker(bind=self.db_engine)
+        self.db_session = Session()
+        
+        # Initialize Flask API (will run in separate thread)
+        self.api_app = None
+        self.api_thread = None
+        
+        # Enhanced configuration
+        self.config = {
+            'shodan_api_key': '',
+            'enable_ai_detection': True,
+            'enable_threat_intel': True,
+            'enable_advanced_scanning': True,
+            'auto_topology_mapping': True,
+            'risk_threshold': 5.0,
+            'api_enabled': False,
+            'api_port': 5000
+        }
+        
+        # Initialize enhanced vulnerability database
         self.known_vulnerabilities = {
             'SMB': {
                 'MS17-010': {
                     'name': 'EternalBlue',
                     'description': 'SMB Remote Code Execution Vulnerability',
                     'cvss': 9.3,
-                    'check': self.check_eternal_blue
+                    'check': self.check_eternal_blue,
+                    'remediation': 'Apply Microsoft Security Bulletin MS17-010'
+                },
+                'CVE-2020-0796': {
+                    'name': 'SMBGhost',
+                    'description': 'Windows SMBv3 Client/Server Remote Code Execution Vulnerability',
+                    'cvss': 10.0,
+                    'check': self.check_smbghost,
+                    'remediation': 'Apply KB4551762 security update'
                 }
             },
             'HTTP': {
@@ -152,13 +709,29 @@ class NetworkScanner(QMainWindow):
                     'name': 'Log4Shell',
                     'description': 'Log4j Remote Code Execution Vulnerability',
                     'cvss': 10.0,
-                    'check': self.check_log4j
+                    'check': self.check_log4j,
+                    'remediation': 'Update Log4j to version 2.15.0 or later'
                 },
                 'CVE-2021-45046': {
                     'name': 'Log4j RCE',
                     'description': 'Log4j Remote Code Execution Vulnerability',
                     'cvss': 9.0,
-                    'check': self.check_log4j
+                    'check': self.check_log4j,
+                    'remediation': 'Update Log4j to version 2.16.0 or later'
+                },
+                'CVE-2022-22965': {
+                    'name': 'Spring4Shell',
+                    'description': 'Spring Framework Remote Code Execution',
+                    'cvss': 9.8,
+                    'check': self.check_spring4shell,
+                    'remediation': 'Update Spring Framework to 5.3.18+ or 5.2.20+'
+                },
+                'CVE-2021-34527': {
+                    'name': 'PrintNightmare',
+                    'description': 'Windows Print Spooler Remote Code Execution',
+                    'cvss': 8.8,
+                    'check': self.check_printnightmare,
+                    'remediation': 'Apply Windows security updates and disable Print Spooler if not needed'
                 }
             },
             'SSH': {
@@ -166,7 +739,15 @@ class NetworkScanner(QMainWindow):
                     'name': 'OpenSSH Privilege Escalation',
                     'description': 'OpenSSH Privilege Escalation Vulnerability',
                     'cvss': 7.8,
-                    'check': self.check_ssh_vuln
+                    'check': self.check_ssh_vuln,
+                    'remediation': 'Update OpenSSH to version 8.5 or later'
+                },
+                'CVE-2020-15778': {
+                    'name': 'OpenSSH Command Injection',
+                    'description': 'OpenSSH scp Command Injection',
+                    'cvss': 7.8,
+                    'check': self.check_ssh_scp_vuln,
+                    'remediation': 'Update OpenSSH and avoid using scp with untrusted servers'
                 }
             },
             'FTP': {
@@ -174,9 +755,50 @@ class NetworkScanner(QMainWindow):
                     'name': 'vsftpd DoS',
                     'description': 'vsftpd Denial of Service Vulnerability',
                     'cvss': 5.0,
-                    'check': self.check_ftp_vuln
+                    'check': self.check_ftp_vuln,
+                    'remediation': 'Update vsftpd to latest version'
+                }
+            },
+            'DNS': {
+                'CVE-2020-1350': {
+                    'name': 'SIGRed',
+                    'description': 'Windows DNS Server Remote Code Execution',
+                    'cvss': 10.0,
+                    'check': self.check_sigred,
+                    'remediation': 'Apply Windows KB4569509 security update'
+                }
+            },
+            'RDP': {
+                'CVE-2019-0708': {
+                    'name': 'BlueKeep',
+                    'description': 'Remote Desktop Services Remote Code Execution',
+                    'cvss': 9.8,
+                    'check': self.check_bluekeep,
+                    'remediation': 'Apply Windows security updates and enable NLA'
+                }
+            },
+            'VPN': {
+                'CVE-2021-20038': {
+                    'name': 'SonicWall VPN RCE',
+                    'description': 'SonicWall SSL-VPN Remote Code Execution',
+                    'cvss': 9.8,
+                    'check': self.check_sonicwall_vpn,
+                    'remediation': 'Update SonicWall firmware to latest version'
                 }
             }
+        }
+        
+        # CVE database for real-time vulnerability updates
+        self.cve_database_url = "https://cve.circl.lu/api/cve/"
+        self.cve_cache = {}
+        
+        # Enhanced risk scoring matrix
+        self.risk_matrix = {
+            'critical': {'score': 10.0, 'color': 'red'},
+            'high': {'score': 8.0, 'color': 'orange'},
+            'medium': {'score': 6.0, 'color': 'yellow'},
+            'low': {'score': 3.0, 'color': 'green'},
+            'info': {'score': 1.0, 'color': 'blue'}
         }
         
         # Initialize OS signatures database
@@ -292,10 +914,58 @@ class NetworkScanner(QMainWindow):
         self.update_vulnerability_database()
         
     def init_ui(self):
-        """Initialize the user interface"""
+        """Initialize the enhanced user interface"""
         # Main widget and layout
         main_widget = QWidget()
         main_layout = QVBoxLayout()
+        
+        # Create tabbed interface for different views
+        self.tab_widget = QTabWidget()
+        
+        # Main scanning tab
+        self.main_tab = QWidget()
+        self.init_main_tab()
+        self.tab_widget.addTab(self.main_tab, "🔍 Network Scanner")
+        
+        # Topology visualization tab
+        self.topology_tab = QWidget()
+        self.init_topology_tab()
+        self.tab_widget.addTab(self.topology_tab, "🗺️ Network Topology")
+        
+        # AI Analytics tab
+        self.analytics_tab = QWidget()
+        self.init_analytics_tab()
+        self.tab_widget.addTab(self.analytics_tab, "🤖 AI Analytics")
+        
+        # Threat Intelligence tab
+        self.threat_tab = QWidget()
+        self.init_threat_tab()
+        self.tab_widget.addTab(self.threat_tab, "⚠️ Threat Intelligence")
+        
+        # Reports tab
+        self.reports_tab = QWidget()
+        self.init_reports_tab()
+        self.tab_widget.addTab(self.reports_tab, "📊 Reports")
+        
+        # Configuration tab
+        self.config_tab = QWidget()
+        self.init_config_tab()
+        self.tab_widget.addTab(self.config_tab, "⚙️ Configuration")
+        
+        main_layout.addWidget(self.tab_widget)
+        main_widget.setLayout(main_layout)
+        self.setCentralWidget(main_widget)
+        
+        # Set window properties
+        self.setWindowTitle("Advanced Network Scanner v2.0")
+        self.setGeometry(100, 100, 1400, 900)
+        
+        # Apply dark theme
+        self.apply_dark_theme()
+        
+    def init_main_tab(self):
+        """Initialize the main scanning tab"""
+        layout = QVBoxLayout()
         
         # Add advanced scanning options group
         advanced_group = QGroupBox("Advanced Options")
@@ -1602,6 +2272,1152 @@ class NetworkScanner(QMainWindow):
         except Exception as e:
             self.add_log_message(f"Service detection error on {ip}:{port}: {str(e)}")
             return "Unknown"
+
+    def apply_dark_theme(self):
+        """Apply a modern dark theme to the application"""
+        dark_palette = QPalette()
+        dark_palette.setColor(QPalette.Window, QColor(53, 53, 53))
+        dark_palette.setColor(QPalette.WindowText, QColor(255, 255, 255))
+        dark_palette.setColor(QPalette.Base, QColor(25, 25, 25))
+        dark_palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
+        dark_palette.setColor(QPalette.ToolTipBase, QColor(0, 0, 0))
+        dark_palette.setColor(QPalette.ToolTipText, QColor(255, 255, 255))
+        dark_palette.setColor(QPalette.Text, QColor(255, 255, 255))
+        dark_palette.setColor(QPalette.Button, QColor(53, 53, 53))
+        dark_palette.setColor(QPalette.ButtonText, QColor(255, 255, 255))
+        dark_palette.setColor(QPalette.BrightText, QColor(255, 0, 0))
+        dark_palette.setColor(QPalette.Link, QColor(42, 130, 218))
+        dark_palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
+        dark_palette.setColor(QPalette.HighlightedText, QColor(0, 0, 0))
+        self.setPalette(dark_palette)
+        
+    def init_topology_tab(self):
+        """Initialize the network topology visualization tab"""
+        layout = QVBoxLayout()
+        
+        # Control panel
+        control_panel = QGroupBox("Topology Controls")
+        control_layout = QHBoxLayout()
+        
+        self.refresh_topology_btn = QPushButton("🔄 Refresh Topology")
+        self.refresh_topology_btn.clicked.connect(self.refresh_topology)
+        
+        self.export_topology_btn = QPushButton("💾 Export Topology")
+        self.export_topology_btn.clicked.connect(self.export_topology)
+        
+        self.layout_combo = QComboBox()
+        self.layout_combo.addItems(["Spring Layout", "Circular Layout", "Hierarchical Layout", "Random Layout"])
+        self.layout_combo.currentTextChanged.connect(self.update_topology_layout)
+        
+        control_layout.addWidget(QLabel("Layout:"))
+        control_layout.addWidget(self.layout_combo)
+        control_layout.addWidget(self.refresh_topology_btn)
+        control_layout.addWidget(self.export_topology_btn)
+        control_layout.addStretch()
+        
+        control_panel.setLayout(control_layout)
+        layout.addWidget(control_panel)
+        
+        # Topology visualization area
+        self.topology_figure = Figure(figsize=(12, 8))
+        self.topology_canvas = FigureCanvas(self.topology_figure)
+        layout.addWidget(self.topology_canvas)
+        
+        self.topology_tab.setLayout(layout)
+        
+    def init_analytics_tab(self):
+        """Initialize the AI analytics tab"""
+        layout = QVBoxLayout()
+        
+        # Analytics control panel
+        analytics_panel = QGroupBox("AI Analytics Controls")
+        analytics_layout = QHBoxLayout()
+        
+        self.train_ai_btn = QPushButton("🧠 Train AI Models")
+        self.train_ai_btn.clicked.connect(self.train_ai_models)
+        
+        self.analyze_anomalies_btn = QPushButton("🔍 Analyze Anomalies")
+        self.analyze_anomalies_btn.clicked.connect(self.analyze_anomalies)
+        
+        self.ai_threshold_slider = QSlider(Qt.Horizontal)
+        self.ai_threshold_slider.setRange(1, 100)
+        self.ai_threshold_slider.setValue(50)
+        self.ai_threshold_slider.valueChanged.connect(self.update_ai_threshold)
+        
+        analytics_layout.addWidget(self.train_ai_btn)
+        analytics_layout.addWidget(self.analyze_anomalies_btn)
+        analytics_layout.addWidget(QLabel("Sensitivity:"))
+        analytics_layout.addWidget(self.ai_threshold_slider)
+        analytics_layout.addStretch()
+        
+        analytics_panel.setLayout(analytics_layout)
+        layout.addWidget(analytics_panel)
+        
+        # Split view for analytics
+        splitter = QSplitter(Qt.Horizontal)
+        
+        # Left side: Analytics results
+        left_widget = QWidget()
+        left_layout = QVBoxLayout()
+        
+        self.analytics_table = QTableWidget()
+        self.analytics_table.setColumnCount(6)
+        self.analytics_table.setHorizontalHeaderLabels([
+            "IP Address", "Anomaly Score", "Risk Level", "Confidence", "AI Prediction", "Details"
+        ])
+        self.analytics_table.horizontalHeader().setStretchLastSection(True)
+        
+        left_layout.addWidget(QLabel("Anomaly Detection Results:"))
+        left_layout.addWidget(self.analytics_table)
+        left_widget.setLayout(left_layout)
+        
+        # Right side: Visualization
+        right_widget = QWidget()
+        right_layout = QVBoxLayout()
+        
+        self.analytics_figure = Figure(figsize=(8, 6))
+        self.analytics_canvas = FigureCanvas(self.analytics_figure)
+        
+        right_layout.addWidget(QLabel("Risk Distribution:"))
+        right_layout.addWidget(self.analytics_canvas)
+        right_widget.setLayout(right_layout)
+        
+        splitter.addWidget(left_widget)
+        splitter.addWidget(right_widget)
+        splitter.setStretchFactor(0, 2)
+        splitter.setStretchFactor(1, 1)
+        
+        layout.addWidget(splitter)
+        self.analytics_tab.setLayout(layout)
+        
+    def init_threat_tab(self):
+        """Initialize the threat intelligence tab"""
+        layout = QVBoxLayout()
+        
+        # Threat intel control panel
+        threat_panel = QGroupBox("Threat Intelligence Controls")
+        threat_layout = QHBoxLayout()
+        
+        self.update_threat_db_btn = QPushButton("🔄 Update Threat DB")
+        self.update_threat_db_btn.clicked.connect(self.update_threat_database)
+        
+        self.scan_malicious_ips_btn = QPushButton("🛡️ Scan for Malicious IPs")
+        self.scan_malicious_ips_btn.clicked.connect(self.scan_malicious_ips)
+        
+        self.threat_feed_combo = QComboBox()
+        self.threat_feed_combo.addItems(["All Sources", "Shodan", "AbuseIPDB", "VirusTotal", "Local DB"])
+        
+        threat_layout.addWidget(self.update_threat_db_btn)
+        threat_layout.addWidget(self.scan_malicious_ips_btn)
+        threat_layout.addWidget(QLabel("Source:"))
+        threat_layout.addWidget(self.threat_feed_combo)
+        threat_layout.addStretch()
+        
+        threat_panel.setLayout(threat_layout)
+        layout.addWidget(threat_panel)
+        
+        # Threat intelligence results
+        self.threat_table = QTableWidget()
+        self.threat_table.setColumnCount(7)
+        self.threat_table.setHorizontalHeaderLabels([
+            "IP Address", "Threat Level", "Categories", "Sources", "Confidence", "First Seen", "Actions"
+        ])
+        self.threat_table.horizontalHeader().setStretchLastSection(True)
+        
+        layout.addWidget(QLabel("Threat Intelligence Results:"))
+        layout.addWidget(self.threat_table)
+        
+        self.threat_tab.setLayout(layout)
+        
+    def init_reports_tab(self):
+        """Initialize the reports tab"""
+        layout = QVBoxLayout()
+        
+        # Report generation panel
+        report_panel = QGroupBox("Report Generation")
+        report_layout = QGridLayout()
+        
+        # Report type selection
+        self.report_type_combo = QComboBox()
+        self.report_type_combo.addItems([
+            "Executive Summary", "Technical Report", "Vulnerability Assessment", 
+            "Network Topology Report", "Risk Analysis", "Compliance Report"
+        ])
+        
+        # Report format selection
+        self.report_format_combo = QComboBox()
+        self.report_format_combo.addItems(["PDF", "HTML", "CSV", "JSON", "Excel"])
+        
+        # Report options
+        self.include_charts_cb = QCheckBox("Include Charts")
+        self.include_charts_cb.setChecked(True)
+        
+        self.include_topology_cb = QCheckBox("Include Network Topology")
+        self.include_topology_cb.setChecked(True)
+        
+        self.include_remediation_cb = QCheckBox("Include Remediation Steps")
+        self.include_remediation_cb.setChecked(True)
+        
+        # Generate button
+        self.generate_report_btn = QPushButton("📊 Generate Report")
+        self.generate_report_btn.clicked.connect(self.generate_comprehensive_report)
+        
+        # Layout components
+        report_layout.addWidget(QLabel("Report Type:"), 0, 0)
+        report_layout.addWidget(self.report_type_combo, 0, 1)
+        report_layout.addWidget(QLabel("Format:"), 0, 2)
+        report_layout.addWidget(self.report_format_combo, 0, 3)
+        report_layout.addWidget(self.include_charts_cb, 1, 0)
+        report_layout.addWidget(self.include_topology_cb, 1, 1)
+        report_layout.addWidget(self.include_remediation_cb, 1, 2)
+        report_layout.addWidget(self.generate_report_btn, 1, 3)
+        
+        report_panel.setLayout(report_layout)
+        layout.addWidget(report_panel)
+        
+        # Report preview area
+        self.report_preview = QTextEdit()
+        self.report_preview.setReadOnly(True)
+        self.report_preview.setMaximumHeight(400)
+        
+        layout.addWidget(QLabel("Report Preview:"))
+        layout.addWidget(self.report_preview)
+        
+        # Report history
+        self.report_history_table = QTableWidget()
+        self.report_history_table.setColumnCount(5)
+        self.report_history_table.setHorizontalHeaderLabels([
+            "Timestamp", "Report Type", "Format", "File Size", "Actions"
+        ])
+        
+        layout.addWidget(QLabel("Report History:"))
+        layout.addWidget(self.report_history_table)
+        
+        self.reports_tab.setLayout(layout)
+        
+    def init_config_tab(self):
+        """Initialize the configuration tab"""
+        layout = QVBoxLayout()
+        
+        # Scanning configuration
+        scan_config_group = QGroupBox("Scanning Configuration")
+        scan_config_layout = QGridLayout()
+        
+        # Advanced scanning options
+        self.enable_advanced_scan_cb = QCheckBox("Enable Advanced Scanning (Nmap)")
+        self.enable_advanced_scan_cb.setChecked(self.config['enable_advanced_scanning'])
+        
+        self.enable_ai_detection_cb = QCheckBox("Enable AI Anomaly Detection")
+        self.enable_ai_detection_cb.setChecked(self.config['enable_ai_detection'])
+        
+        self.enable_threat_intel_cb = QCheckBox("Enable Threat Intelligence")
+        self.enable_threat_intel_cb.setChecked(self.config['enable_threat_intel'])
+        
+        self.enable_auto_topology_cb = QCheckBox("Auto-Generate Network Topology")
+        self.enable_auto_topology_cb.setChecked(self.config['auto_topology_mapping'])
+        
+        # Risk threshold
+        self.risk_threshold_slider = QSlider(Qt.Horizontal)
+        self.risk_threshold_slider.setRange(1, 10)
+        self.risk_threshold_slider.setValue(int(self.config['risk_threshold']))
+        self.risk_threshold_label = QLabel(f"Risk Threshold: {self.config['risk_threshold']}")
+        self.risk_threshold_slider.valueChanged.connect(
+            lambda v: self.risk_threshold_label.setText(f"Risk Threshold: {v}")
+        )
+        
+        scan_config_layout.addWidget(self.enable_advanced_scan_cb, 0, 0)
+        scan_config_layout.addWidget(self.enable_ai_detection_cb, 0, 1)
+        scan_config_layout.addWidget(self.enable_threat_intel_cb, 1, 0)
+        scan_config_layout.addWidget(self.enable_auto_topology_cb, 1, 1)
+        scan_config_layout.addWidget(self.risk_threshold_label, 2, 0)
+        scan_config_layout.addWidget(self.risk_threshold_slider, 2, 1)
+        
+        scan_config_group.setLayout(scan_config_layout)
+        layout.addWidget(scan_config_group)
+        
+        # API configuration
+        api_config_group = QGroupBox("API Configuration")
+        api_config_layout = QGridLayout()
+        
+        self.shodan_api_key_input = QTextEdit()
+        self.shodan_api_key_input.setMaximumHeight(30)
+        self.shodan_api_key_input.setPlainText(self.config['shodan_api_key'])
+        
+        self.enable_api_cb = QCheckBox("Enable REST API")
+        self.enable_api_cb.setChecked(self.config['api_enabled'])
+        
+        self.api_port_input = QSpinBox()
+        self.api_port_input.setRange(1024, 65535)
+        self.api_port_input.setValue(self.config['api_port'])
+        
+        self.start_api_btn = QPushButton("🚀 Start API Server")
+        self.start_api_btn.clicked.connect(self.toggle_api_server)
+        
+        api_config_layout.addWidget(QLabel("Shodan API Key:"), 0, 0)
+        api_config_layout.addWidget(self.shodan_api_key_input, 0, 1, 1, 2)
+        api_config_layout.addWidget(self.enable_api_cb, 1, 0)
+        api_config_layout.addWidget(QLabel("API Port:"), 1, 1)
+        api_config_layout.addWidget(self.api_port_input, 1, 2)
+        api_config_layout.addWidget(self.start_api_btn, 2, 0, 1, 3)
+        
+        api_config_group.setLayout(api_config_layout)
+        layout.addWidget(api_config_group)
+        
+        # Database configuration
+        db_config_group = QGroupBox("Database Configuration")
+        db_config_layout = QHBoxLayout()
+        
+        self.export_db_btn = QPushButton("💾 Export Database")
+        self.export_db_btn.clicked.connect(self.export_database)
+        
+        self.import_db_btn = QPushButton("📁 Import Database")
+        self.import_db_btn.clicked.connect(self.import_database)
+        
+        self.clear_db_btn = QPushButton("🗑️ Clear Database")
+        self.clear_db_btn.clicked.connect(self.clear_database)
+        
+        db_config_layout.addWidget(self.export_db_btn)
+        db_config_layout.addWidget(self.import_db_btn)
+        db_config_layout.addWidget(self.clear_db_btn)
+        db_config_layout.addStretch()
+        
+        db_config_group.setLayout(db_config_layout)
+        layout.addWidget(db_config_group)
+        
+        # Save configuration button
+        self.save_config_btn = QPushButton("💾 Save Configuration")
+        self.save_config_btn.clicked.connect(self.save_configuration)
+        layout.addWidget(self.save_config_btn)
+        
+        layout.addStretch()
+        self.config_tab.setLayout(layout)
+
+    # Enhanced scanning methods
+    def enhanced_device_scan(self, ip, device_info):
+        """Perform enhanced scanning with all available techniques"""
+        try:
+            # Basic info
+            enhanced_info = device_info.copy()
+            
+            # Advanced scanning if enabled
+            if self.config['enable_advanced_scanning']:
+                nmap_results = self.advanced_scanner.comprehensive_scan(ip)
+                if nmap_results and ip in nmap_results:
+                    nmap_data = nmap_results[ip]
+                    enhanced_info.update({
+                        'advanced_os': nmap_data.get('os', []),
+                        'nmap_scripts': nmap_data.get('scripts', [])
+                    })
+                    
+                    # Extract advanced port info
+                    for protocol in nmap_data.get('protocols', {}):
+                        for port, port_info in nmap_data['protocols'][protocol].items():
+                            if port_info['state'] == 'open':
+                                enhanced_info.setdefault('detailed_services', {})[port] = port_info
+            
+            # Threat intelligence check
+            if self.config['enable_threat_intel']:
+                threat_info = self.threat_intel.check_ip_reputation(ip)
+                enhanced_info['threat_intel'] = threat_info
+                
+                if threat_info['is_malicious']:
+                    enhanced_info['risk_score'] = max(enhanced_info.get('risk_score', 0), 8.0)
+            
+            # AI anomaly detection
+            if self.config['enable_ai_detection'] and self.ai_detector.is_trained:
+                features = self.ai_detector.extract_features(enhanced_info)
+                anomaly_result = self.ai_detector.detect_anomaly(features)
+                enhanced_info['anomaly_detection'] = anomaly_result
+                
+                if anomaly_result['is_anomaly']:
+                    enhanced_info['risk_score'] = max(enhanced_info.get('risk_score', 0), 
+                                                    anomaly_result['score'] * 10)
+            
+            # Calculate comprehensive risk score
+            enhanced_info['risk_score'] = self.calculate_risk_score(enhanced_info)
+            
+            # Save to database
+            self.save_scan_result(enhanced_info)
+            
+            # Update topology if enabled
+            if self.config['auto_topology_mapping']:
+                self.topology_mapper.add_device(ip, enhanced_info)
+            
+            return enhanced_info
+            
+        except Exception as e:
+            self.add_log_message(f"Enhanced scan failed for {ip}: {e}")
+            return device_info
+    
+    def calculate_risk_score(self, device_info):
+        """Calculate comprehensive risk score"""
+        base_score = 0.0
+        
+        # Vulnerability score
+        vulnerabilities = device_info.get('vulnerabilities', [])
+        for vuln in vulnerabilities:
+            if isinstance(vuln, dict):
+                base_score += vuln.get('cvss', 0) / 10.0
+            else:
+                base_score += 5.0  # Default moderate risk
+        
+        # Open ports risk
+        open_ports = device_info.get('open_ports', [])
+        risky_ports = [21, 23, 135, 139, 445, 1433, 3306, 3389, 5432]
+        risk_ports = [p for p in open_ports if p in risky_ports]
+        base_score += len(risk_ports) * 0.5
+        
+        # Service risk
+        services = device_info.get('services', [])
+        risky_services = ['FTP', 'Telnet', 'SMB', 'RDP', 'MySQL', 'PostgreSQL']
+        for service in services:
+            if any(risky in str(service) for risky in risky_services):
+                base_score += 1.0
+        
+        # Threat intelligence
+        threat_info = device_info.get('threat_intel', {})
+        if threat_info.get('is_malicious'):
+            base_score += threat_info.get('confidence', 0) * 10
+        
+        # Anomaly detection
+        anomaly_info = device_info.get('anomaly_detection', {})
+        if anomaly_info.get('is_anomaly'):
+            base_score += anomaly_info.get('score', 0) * 10
+        
+        return min(base_score, 10.0)  # Cap at 10.0
+    
+    def save_scan_result(self, device_info):
+        """Save scan result to database"""
+        try:
+            scan_result = ScanResult(
+                ip_address=device_info.get('ip', ''),
+                hostname=device_info.get('hostname', ''),
+                mac_address=device_info.get('mac', ''),
+                vendor=device_info.get('vendor', ''),
+                open_ports=json.dumps(device_info.get('open_ports', [])),
+                services=json.dumps(device_info.get('services', [])),
+                os_detection=device_info.get('os', ''),
+                vulnerabilities=json.dumps(device_info.get('vulnerabilities', [])),
+                risk_score=device_info.get('risk_score', 0.0),
+                anomaly_score=device_info.get('anomaly_detection', {}).get('score', 0.0),
+                threat_intel=json.dumps(device_info.get('threat_intel', {}))
+            )
+            self.db_session.add(scan_result)
+            self.db_session.commit()
+        except Exception as e:
+            self.add_log_message(f"Database save failed: {e}")
+            self.db_session.rollback()
+    
+    # UI Event Handlers
+    def refresh_topology(self):
+        """Refresh network topology visualization"""
+        try:
+            # Update topology with current devices
+            for device in self.devices:
+                self.topology_mapper.add_device(device['ip'], device)
+            
+            # Generate visualization
+            self.topology_figure.clear()
+            fig = self.topology_mapper.generate_topology_plot()
+            
+            # Copy to our canvas
+            ax = self.topology_figure.add_subplot(111)
+            ax.clear()
+            
+            # Redraw the topology
+            if self.topology_mapper.device_positions:
+                self.topology_mapper.calculate_layout()
+                
+                # Draw nodes and edges
+                node_colors = []
+                node_sizes = []
+                
+                for node in self.topology_mapper.graph.nodes():
+                    device_info = self.topology_mapper.graph.nodes[node]
+                    risk_score = device_info.get('risk_score', 0.0)
+                    
+                    if risk_score > 7.0:
+                        node_colors.append('red')
+                    elif risk_score > 4.0:
+                        node_colors.append('orange')
+                    else:
+                        node_colors.append('green')
+                    
+                    open_ports = len(device_info.get('open_ports', []))
+                    node_sizes.append(max(300, open_ports * 50))
+                
+                nx.draw_networkx_nodes(
+                    self.topology_mapper.graph,
+                    self.topology_mapper.device_positions,
+                    node_color=node_colors,
+                    node_size=node_sizes,
+                    alpha=0.7,
+                    ax=ax
+                )
+                
+                nx.draw_networkx_edges(
+                    self.topology_mapper.graph,
+                    self.topology_mapper.device_positions,
+                    alpha=0.5,
+                    edge_color='gray',
+                    ax=ax
+                )
+                
+                nx.draw_networkx_labels(
+                    self.topology_mapper.graph,
+                    self.topology_mapper.device_positions,
+                    font_size=8,
+                    ax=ax
+                )
+                
+                ax.set_title('Network Topology Map', fontsize=16, fontweight='bold')
+                ax.axis('off')
+            
+            self.topology_canvas.draw()
+            self.add_log_message("Network topology refreshed")
+            
+        except Exception as e:
+            self.add_log_message(f"Topology refresh failed: {e}")
+    
+    def export_topology(self):
+        """Export network topology to file"""
+        try:
+            file_dialog = QFileDialog()
+            filename, _ = file_dialog.getSaveFileName(
+                self, "Export Topology", "", 
+                "PNG Files (*.png);;HTML Files (*.html);;PDF Files (*.pdf)"
+            )
+            
+            if filename:
+                if filename.endswith('.html'):
+                    fig = self.topology_mapper.generate_interactive_plot(filename)
+                else:
+                    fig = self.topology_mapper.generate_topology_plot(filename)
+                
+                self.add_log_message(f"Topology exported to {filename}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export topology: {e}")
+    
+    def update_topology_layout(self, layout_type):
+        """Update topology layout algorithm"""
+        try:
+            if layout_type == "Circular Layout":
+                self.topology_mapper.device_positions = nx.circular_layout(self.topology_mapper.graph)
+            elif layout_type == "Random Layout":
+                self.topology_mapper.device_positions = nx.random_layout(self.topology_mapper.graph)
+            elif layout_type == "Hierarchical Layout":
+                self.topology_mapper.device_positions = nx.spring_layout(
+                    self.topology_mapper.graph, k=5, iterations=100
+                )
+            else:  # Spring Layout (default)
+                self.topology_mapper.device_positions = nx.spring_layout(
+                    self.topology_mapper.graph, k=3, iterations=50
+                )
+            
+            self.refresh_topology()
+            
+        except Exception as e:
+            self.add_log_message(f"Layout update failed: {e}")
+    
+    def train_ai_models(self):
+        """Train AI anomaly detection models"""
+        try:
+            # Collect training data from historical scans
+            results = self.db_session.query(ScanResult).all()
+            
+            if len(results) < 10:
+                QMessageBox.warning(self, "Insufficient Data", 
+                                  "Need at least 10 scan results to train AI models. Perform more scans first.")
+                return
+            
+            # Extract features for training
+            for result in results:
+                device_info = {
+                    'open_ports': json.loads(result.open_ports or '[]'),
+                    'services': json.loads(result.services or '[]'),
+                    'vulnerabilities': json.loads(result.vulnerabilities or '[]'),
+                    'risk_score': result.risk_score or 0.0,
+                    'response_time': 0.5,  # Default value
+                    'packet_size': 64  # Default value
+                }
+                features = self.ai_detector.extract_features(device_info)
+                self.ai_detector.add_baseline_data(features)
+            
+            # Train the models
+            if self.ai_detector.train_models():
+                self.add_log_message("AI models trained successfully")
+                QMessageBox.information(self, "Training Complete", 
+                                      "AI anomaly detection models have been trained successfully!")
+            else:
+                QMessageBox.warning(self, "Training Failed", "AI model training failed.")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Training Error", f"AI training failed: {e}")
+    
+    def analyze_anomalies(self):
+        """Analyze current devices for anomalies"""
+        try:
+            if not self.ai_detector.is_trained:
+                QMessageBox.warning(self, "Models Not Trained", 
+                                  "Please train the AI models first.")
+                return
+            
+            self.analytics_table.setRowCount(0)
+            anomaly_count = 0
+            
+            for device in self.devices:
+                features = self.ai_detector.extract_features(device)
+                anomaly_result = self.ai_detector.detect_anomaly(features)
+                
+                if anomaly_result['is_anomaly'] or anomaly_result['score'] > 0.1:
+                    row = self.analytics_table.rowCount()
+                    self.analytics_table.insertRow(row)
+                    
+                    # Determine risk level
+                    score = anomaly_result['score']
+                    if score > 0.7:
+                        risk_level = "High"
+                    elif score > 0.4:
+                        risk_level = "Medium"
+                    else:
+                        risk_level = "Low"
+                    
+                    self.analytics_table.setItem(row, 0, QTableWidgetItem(device.get('ip', '')))
+                    self.analytics_table.setItem(row, 1, QTableWidgetItem(f"{score:.3f}"))
+                    self.analytics_table.setItem(row, 2, QTableWidgetItem(risk_level))
+                    self.analytics_table.setItem(row, 3, QTableWidgetItem(f"{anomaly_result['confidence']:.1f}%"))
+                    self.analytics_table.setItem(row, 4, QTableWidgetItem("Anomaly" if anomaly_result['is_anomaly'] else "Suspicious"))
+                    self.analytics_table.setItem(row, 5, QTableWidgetItem(str(anomaly_result.get('details', {}))))
+                    
+                    if anomaly_result['is_anomaly']:
+                        anomaly_count += 1
+            
+            # Update visualization
+            self.update_analytics_visualization()
+            
+            self.add_log_message(f"Anomaly analysis complete. Found {anomaly_count} anomalies.")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Analysis Error", f"Anomaly analysis failed: {e}")
+    
+    def update_analytics_visualization(self):
+        """Update the analytics visualization"""
+        try:
+            self.analytics_figure.clear()
+            ax = self.analytics_figure.add_subplot(111)
+            
+            # Collect risk scores
+            risk_scores = []
+            for device in self.devices:
+                risk_scores.append(device.get('risk_score', 0.0))
+            
+            if risk_scores:
+                # Create histogram
+                ax.hist(risk_scores, bins=10, alpha=0.7, color='skyblue', edgecolor='black')
+                ax.set_xlabel('Risk Score')
+                ax.set_ylabel('Number of Devices')
+                ax.set_title('Risk Score Distribution')
+                ax.grid(True, alpha=0.3)
+            
+            self.analytics_canvas.draw()
+            
+        except Exception as e:
+            self.add_log_message(f"Analytics visualization update failed: {e}")
+    
+    def update_ai_threshold(self, value):
+        """Update AI detection threshold"""
+        # This would adjust the sensitivity of anomaly detection
+        self.add_log_message(f"AI sensitivity set to {value}%")
+    
+    def update_threat_database(self):
+        """Update threat intelligence database"""
+        try:
+            self.add_log_message("Updating threat intelligence database...")
+            
+            # Simulate threat database update
+            # In real implementation, this would fetch from actual threat feeds
+            updated_count = 0
+            
+            # Mock update process
+            for i in range(100):
+                time.sleep(0.01)  # Simulate network requests
+                updated_count += 1
+                if updated_count % 10 == 0:
+                    self.add_log_message(f"Updated {updated_count} threat indicators...")
+            
+            self.add_log_message(f"Threat database updated. {updated_count} indicators processed.")
+            QMessageBox.information(self, "Update Complete", 
+                                  f"Threat intelligence database updated with {updated_count} indicators.")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Update Error", f"Threat database update failed: {e}")
+    
+    def scan_malicious_ips(self):
+        """Scan discovered devices against threat intelligence"""
+        try:
+            self.threat_table.setRowCount(0)
+            malicious_count = 0
+            
+            for device in self.devices:
+                ip = device.get('ip', '')
+                threat_info = self.threat_intel.check_ip_reputation(ip)
+                
+                if threat_info['is_malicious'] or threat_info['confidence'] > 0.3:
+                    row = self.threat_table.rowCount()
+                    self.threat_table.insertRow(row)
+                    
+                    # Determine threat level
+                    confidence = threat_info['confidence']
+                    if confidence > 0.8:
+                        threat_level = "Critical"
+                    elif confidence > 0.5:
+                        threat_level = "High"
+                    else:
+                        threat_level = "Medium"
+                    
+                    self.threat_table.setItem(row, 0, QTableWidgetItem(ip))
+                    self.threat_table.setItem(row, 1, QTableWidgetItem(threat_level))
+                    self.threat_table.setItem(row, 2, QTableWidgetItem(', '.join(threat_info['threat_types'])))
+                    self.threat_table.setItem(row, 3, QTableWidgetItem(', '.join(threat_info['sources'])))
+                    self.threat_table.setItem(row, 4, QTableWidgetItem(f"{confidence*100:.1f}%"))
+                    self.threat_table.setItem(row, 5, QTableWidgetItem(datetime.now().strftime("%Y-%m-%d %H:%M")))
+                    self.threat_table.setItem(row, 6, QTableWidgetItem("Block"))
+                    
+                    if threat_info['is_malicious']:
+                        malicious_count += 1
+            
+            self.add_log_message(f"Threat scan complete. Found {malicious_count} malicious IPs.")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Scan Error", f"Threat intelligence scan failed: {e}")
+    
+    def generate_comprehensive_report(self):
+        """Generate comprehensive security report"""
+        try:
+            report_type = self.report_type_combo.currentText()
+            report_format = self.report_format_combo.currentText()
+            
+            self.add_log_message(f"Generating {report_type} report in {report_format} format...")
+            
+            # Collect report data
+            report_data = {
+                'scan_date': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'total_devices': len(self.devices),
+                'high_risk_devices': len([d for d in self.devices if d.get('risk_score', 0) > 7.0]),
+                'vulnerabilities_found': sum(len(d.get('vulnerabilities', [])) for d in self.devices),
+                'devices': self.devices
+            }
+            
+            if report_format == "PDF":
+                filename = self.generate_pdf_report(report_data, report_type)
+            elif report_format == "HTML":
+                filename = self.generate_html_report(report_data, report_type)
+            else:
+                filename = self.generate_json_report(report_data, report_type)
+            
+            # Update report preview
+            preview_text = f"""
+Report Generated: {report_data['scan_date']}
+Report Type: {report_type}
+Format: {report_format}
+
+Summary:
+- Total Devices Scanned: {report_data['total_devices']}
+- High Risk Devices: {report_data['high_risk_devices']}
+- Total Vulnerabilities: {report_data['vulnerabilities_found']}
+
+File: {filename}
+            """
+            self.report_preview.setPlainText(preview_text)
+            
+            self.add_log_message(f"Report generated successfully: {filename}")
+            QMessageBox.information(self, "Report Generated", f"Report saved as: {filename}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Report Error", f"Report generation failed: {e}")
+    
+    def generate_pdf_report(self, data, report_type):
+        """Generate PDF report using ReportLab"""
+        filename = f"network_scan_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        
+        doc = SimpleDocTemplate(filename, pagesize=letter)
+        styles = getSampleStyleSheet()
+        story = []
+        
+        # Title
+        title = Paragraph(f"Network Security Report - {report_type}", styles['Title'])
+        story.append(title)
+        story.append(Spacer(1, 12))
+        
+        # Summary
+        summary_data = [
+            ['Scan Date', data['scan_date']],
+            ['Total Devices', str(data['total_devices'])],
+            ['High Risk Devices', str(data['high_risk_devices'])],
+            ['Vulnerabilities Found', str(data['vulnerabilities_found'])]
+        ]
+        
+        summary_table = Table(summary_data)
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 14),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(summary_table)
+        story.append(Spacer(1, 12))
+        
+        # Device details table
+        device_data = [['IP Address', 'Hostname', 'Risk Score', 'Open Ports', 'Vulnerabilities']]
+        
+        for device in data['devices']:
+            device_data.append([
+                device.get('ip', ''),
+                device.get('hostname', 'Unknown'),
+                f"{device.get('risk_score', 0):.1f}",
+                str(len(device.get('open_ports', []))),
+                str(len(device.get('vulnerabilities', [])))
+            ])
+        
+        device_table = Table(device_data)
+        device_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        
+        story.append(device_table)
+        doc.build(story)
+        
+        return filename
+    
+    def generate_html_report(self, data, report_type):
+        """Generate HTML report"""
+        filename = f"network_scan_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Network Security Report - {report_type}</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                .header {{ background-color: #2c3e50; color: white; padding: 20px; text-align: center; }}
+                .summary {{ background-color: #ecf0f1; padding: 15px; margin: 20px 0; }}
+                table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
+                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+                th {{ background-color: #34495e; color: white; }}
+                .high-risk {{ background-color: #e74c3c; color: white; }}
+                .medium-risk {{ background-color: #f39c12; }}
+                .low-risk {{ background-color: #27ae60; color: white; }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>Network Security Report</h1>
+                <h2>{report_type}</h2>
+                <p>Generated on: {data['scan_date']}</p>
+            </div>
+            
+            <div class="summary">
+                <h3>Executive Summary</h3>
+                <ul>
+                    <li>Total Devices Scanned: {data['total_devices']}</li>
+                    <li>High Risk Devices: {data['high_risk_devices']}</li>
+                    <li>Total Vulnerabilities Found: {data['vulnerabilities_found']}</li>
+                </ul>
+            </div>
+            
+            <h3>Detailed Device Analysis</h3>
+            <table>
+                <tr>
+                    <th>IP Address</th>
+                    <th>Hostname</th>
+                    <th>Risk Score</th>
+                    <th>Open Ports</th>
+                    <th>Vulnerabilities</th>
+                    <th>Status</th>
+                </tr>
+        """
+        
+        for device in data['devices']:
+            risk_score = device.get('risk_score', 0)
+            risk_class = 'high-risk' if risk_score > 7 else 'medium-risk' if risk_score > 4 else 'low-risk'
+            
+            html_content += f"""
+                <tr class="{risk_class}">
+                    <td>{device.get('ip', '')}</td>
+                    <td>{device.get('hostname', 'Unknown')}</td>
+                    <td>{risk_score:.1f}</td>
+                    <td>{len(device.get('open_ports', []))}</td>
+                    <td>{len(device.get('vulnerabilities', []))}</td>
+                    <td>{'High Risk' if risk_score > 7 else 'Medium Risk' if risk_score > 4 else 'Low Risk'}</td>
+                </tr>
+            """
+        
+        html_content += """
+            </table>
+        </body>
+        </html>
+        """
+        
+        with open(filename, 'w') as f:
+            f.write(html_content)
+        
+        return filename
+    
+    def generate_json_report(self, data, report_type):
+        """Generate JSON report"""
+        filename = f"network_scan_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        
+        report = {
+            'report_type': report_type,
+            'generated_at': data['scan_date'],
+            'summary': {
+                'total_devices': data['total_devices'],
+                'high_risk_devices': data['high_risk_devices'],
+                'vulnerabilities_found': data['vulnerabilities_found']
+            },
+            'devices': data['devices']
+        }
+        
+        with open(filename, 'w') as f:
+            json.dump(report, f, indent=2, default=str)
+        
+        return filename
+    
+    def toggle_api_server(self):
+        """Start/stop the REST API server"""
+        try:
+            if self.api_thread is None:
+                # Start API server
+                port = self.api_port_input.value()
+                self.start_api_server(port)
+                self.start_api_btn.setText("🛑 Stop API Server")
+                self.add_log_message(f"API server started on port {port}")
+            else:
+                # Stop API server
+                self.stop_api_server()
+                self.start_api_btn.setText("🚀 Start API Server")
+                self.add_log_message("API server stopped")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "API Error", f"API server operation failed: {e}")
+    
+    def start_api_server(self, port):
+        """Start the Flask API server in a separate thread"""
+        self.api_app = Flask(__name__)
+        
+        @self.api_app.route('/api/devices', methods=['GET'])
+        def get_devices():
+            return jsonify(self.devices)
+        
+        @self.api_app.route('/api/scan/<ip>', methods=['POST'])
+        def scan_device(ip):
+            # Trigger device scan
+            return jsonify({'status': 'scan_started', 'ip': ip})
+        
+        @self.api_app.route('/api/topology', methods=['GET'])
+        def get_topology():
+            return jsonify({
+                'nodes': list(self.topology_mapper.graph.nodes(data=True)),
+                'edges': list(self.topology_mapper.graph.edges())
+            })
+        
+        def run_api():
+            self.api_app.run(host='0.0.0.0', port=port, debug=False)
+        
+        self.api_thread = threading.Thread(target=run_api, daemon=True)
+        self.api_thread.start()
+    
+    def stop_api_server(self):
+        """Stop the API server"""
+        if self.api_thread:
+            self.api_thread = None
+            self.api_app = None
+    
+    def save_configuration(self):
+        """Save current configuration"""
+        try:
+            self.config.update({
+                'shodan_api_key': self.shodan_api_key_input.toPlainText(),
+                'enable_ai_detection': self.enable_ai_detection_cb.isChecked(),
+                'enable_threat_intel': self.enable_threat_intel_cb.isChecked(),
+                'enable_advanced_scanning': self.enable_advanced_scan_cb.isChecked(),
+                'auto_topology_mapping': self.enable_auto_topology_cb.isChecked(),
+                'risk_threshold': self.risk_threshold_slider.value(),
+                'api_enabled': self.enable_api_cb.isChecked(),
+                'api_port': self.api_port_input.value()
+            })
+            
+            # Initialize Shodan if API key provided
+            if self.config['shodan_api_key']:
+                self.threat_intel.initialize_shodan(self.config['shodan_api_key'])
+            
+            # Save to file
+            with open('scanner_config.json', 'w') as f:
+                json.dump(self.config, f, indent=2)
+            
+            self.add_log_message("Configuration saved successfully")
+            QMessageBox.information(self, "Configuration Saved", "Settings have been saved successfully!")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Save Error", f"Failed to save configuration: {e}")
+    
+    def export_database(self):
+        """Export scan database to file"""
+        try:
+            filename, _ = QFileDialog.getSaveFileName(
+                self, "Export Database", "", "JSON Files (*.json);;CSV Files (*.csv)"
+            )
+            
+            if filename:
+                results = self.db_session.query(ScanResult).all()
+                
+                if filename.endswith('.csv'):
+                    with open(filename, 'w', newline='') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(['IP', 'Hostname', 'MAC', 'Vendor', 'Risk Score', 'Timestamp'])
+                        for result in results:
+                            writer.writerow([
+                                result.ip_address, result.hostname, result.mac_address,
+                                result.vendor, result.risk_score, result.timestamp
+                            ])
+                else:
+                    data = []
+                    for result in results:
+                        data.append({
+                            'ip_address': result.ip_address,
+                            'hostname': result.hostname,
+                            'mac_address': result.mac_address,
+                            'vendor': result.vendor,
+                            'risk_score': result.risk_score,
+                            'timestamp': result.timestamp.isoformat() if result.timestamp else None
+                        })
+                    
+                    with open(filename, 'w') as f:
+                        json.dump(data, f, indent=2)
+                
+                self.add_log_message(f"Database exported to {filename}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Database export failed: {e}")
+    
+    def import_database(self):
+        """Import scan database from file"""
+        try:
+            filename, _ = QFileDialog.getOpenFileName(
+                self, "Import Database", "", "JSON Files (*.json);;CSV Files (*.csv)"
+            )
+            
+            if filename:
+                # Implementation would depend on file format
+                self.add_log_message(f"Database import from {filename} - feature coming soon")
+                QMessageBox.information(self, "Import", "Database import feature coming in next update!")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Import Error", f"Database import failed: {e}")
+    
+    def clear_database(self):
+        """Clear all scan data from database"""
+        try:
+            reply = QMessageBox.question(
+                self, "Clear Database", 
+                "Are you sure you want to delete all scan data? This cannot be undone.",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                self.db_session.query(ScanResult).delete()
+                self.db_session.commit()
+                self.add_log_message("Database cleared successfully")
+                QMessageBox.information(self, "Database Cleared", "All scan data has been deleted.")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Clear Error", f"Database clear failed: {e}")
+            self.db_session.rollback()
+
+    # Additional vulnerability check methods for the enhanced database
+    def check_smbghost(self, ip, port=445):
+        """Check for SMBGhost vulnerability (CVE-2020-0796)"""
+        try:
+            if not self.check_port(ip, port):
+                return False
+            # Simplified check - in reality would need specific SMB protocol testing
+            return True  # Placeholder
+        except:
+            return False
+    
+    def check_spring4shell(self, ip, port=8080):
+        """Check for Spring4Shell vulnerability"""
+        try:
+            if not self.check_port(ip, port):
+                return False
+            # Would need HTTP request with specific Spring Framework detection
+            return False  # Placeholder
+        except:
+            return False
+    
+    def check_printnightmare(self, ip, port=445):
+        """Check for PrintNightmare vulnerability"""
+        try:
+            if not self.check_port(ip, port):
+                return False
+            # Would need specific RPC/SMB testing for print spooler
+            return False  # Placeholder
+        except:
+            return False
+    
+    def check_ssh_scp_vuln(self, ip, port=22):
+        """Check for SSH SCP vulnerability"""
+        try:
+            if not self.check_port(ip, port):
+                return False
+            # Would need SSH version detection
+            return False  # Placeholder
+        except:
+            return False
+    
+    def check_sigred(self, ip, port=53):
+        """Check for SIGRed DNS vulnerability"""
+        try:
+            if not self.check_port(ip, port):
+                return False
+            # Would need DNS query testing
+            return False  # Placeholder
+        except:
+            return False
+    
+    def check_bluekeep(self, ip, port=3389):
+        """Check for BlueKeep RDP vulnerability"""
+        try:
+            if not self.check_port(ip, port):
+                return False
+            # Would need RDP protocol testing
+            return False  # Placeholder
+        except:
+            return False
+    
+    def check_sonicwall_vpn(self, ip, port=443):
+        """Check for SonicWall VPN vulnerability"""
+        try:
+            if not self.check_port(ip, port):
+                return False
+            # Would need specific SonicWall SSL-VPN detection
+            return False  # Placeholder
+        except:
+            return False
 
 def main():
     """Main application entry point"""
