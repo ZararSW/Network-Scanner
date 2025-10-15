@@ -40,7 +40,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import DBSCAN
 import sqlite3
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Float, Boolean, Text
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
@@ -658,6 +658,9 @@ class NetworkScanner(QMainWindow):
     def __init__(self):
         super().__init__()
         
+        # Initialize theme state
+        self.dark_mode = False  # Start with light mode by default
+        
         # Initialize enhanced components
         self.threat_intel = ThreatIntelligence()
         self.advanced_scanner = AdvancedScanner(logger=self.add_log_message)
@@ -960,8 +963,227 @@ class NetworkScanner(QMainWindow):
         self.setWindowTitle("Advanced Network Scanner v2.0")
         self.setGeometry(100, 100, 1400, 900)
         
-        # Apply dark theme
-        self.apply_dark_theme()
+        # Apply current theme
+        self.apply_theme()
+        
+    def toggle_theme(self):
+        """Toggle between light and dark theme"""
+        self.dark_mode = not self.dark_mode
+        self.theme_button.setText("🌙 Dark Mode" if self.dark_mode else "☀️ Light Mode")
+        self.apply_theme()
+
+    def apply_theme(self):
+        """Apply the current theme to the application"""
+        if self.dark_mode:
+            self.apply_dark_theme()
+        else:
+            self.apply_light_theme()
+
+    def apply_dark_theme(self):
+        """Apply dark theme to the application"""
+        # Set application-wide stylesheet for dark theme
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QWidget {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QPushButton {
+                background-color: #3b3b3b;
+                color: #ffffff;
+                border: 1px solid #555555;
+                padding: 5px;
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background-color: #454545;
+            }
+            QTabWidget::pane {
+                border: 1px solid #555555;
+                background-color: #2b2b2b;
+            }
+            QTabBar::tab {
+                background-color: #3b3b3b;
+                color: #ffffff;
+                padding: 8px 12px;
+                border: 1px solid #555555;
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }
+            QTabBar::tab:selected {
+                background-color: #2b2b2b;
+            }
+            QComboBox {
+                background-color: #3b3b3b;
+                color: #ffffff;
+                border: 1px solid #555555;
+                padding: 5px;
+            }
+            QCheckBox {
+                color: #ffffff;
+            }
+            QLabel {
+                color: #ffffff;
+            }
+            QGroupBox {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                border: 1px solid #555555;
+                margin-top: 10px;
+            }
+            QGroupBox::title {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+        """)
+        
+        # Apply dark theme to specific widgets
+        self.results_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                gridline-color: #555555;
+                border: 1px solid #555555;
+            }
+            QHeaderView::section {
+                background-color: #3b3b3b;
+                color: #ffffff;
+                padding: 5px;
+                border: 1px solid #555555;
+            }
+            QTableWidget::item {
+                padding: 5px;
+            }
+        """)
+        
+        self.log_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                border: 1px solid #555555;
+                padding: 5px;
+            }
+        """)
+        
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #555555;
+                border-radius: 3px;
+                text-align: center;
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QProgressBar::chunk {
+                background-color: #2a82da;
+            }
+        """)
+
+    def apply_light_theme(self):
+        """Apply light theme to the application"""
+        # Set application-wide stylesheet for light theme
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #f0f0f0;
+                color: #000000;
+            }
+            QWidget {
+                background-color: #f0f0f0;
+                color: #000000;
+            }
+            QPushButton {
+                background-color: #ffffff;
+                color: #000000;
+                border: 1px solid #cccccc;
+                padding: 5px;
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background-color: #e0e0e0;
+            }
+            QTabWidget::pane {
+                border: 1px solid #cccccc;
+                background-color: #ffffff;
+            }
+            QTabBar::tab {
+                background-color: #e0e0e0;
+                color: #000000;
+                padding: 8px 12px;
+                border: 1px solid #cccccc;
+                border-bottom: none;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+            }
+            QTabBar::tab:selected {
+                background-color: #ffffff;
+            }
+            QComboBox {
+                background-color: #ffffff;
+                color: #000000;
+                border: 1px solid #cccccc;
+                padding: 5px;
+            }
+            QCheckBox {
+                color: #000000;
+            }
+            QLabel {
+                color: #000000;
+            }
+            QGroupBox {
+                background-color: #ffffff;
+                color: #000000;
+                border: 1px solid #cccccc;
+                margin-top: 10px;
+            }
+            QGroupBox::title {
+                background-color: #ffffff;
+                color: #000000;
+            }
+        """)
+        
+        # Apply light theme to specific widgets
+        self.results_table.setStyleSheet("""
+            QTableWidget {
+                background-color: #ffffff;
+                color: #000000;
+                gridline-color: #cccccc;
+                border: 1px solid #cccccc;
+            }
+            QHeaderView::section {
+                background-color: #f0f0f0;
+                color: #000000;
+                padding: 5px;
+                border: 1px solid #cccccc;
+            }
+            QTableWidget::item {
+                padding: 5px;
+            }
+        """)
+        
+        self.log_text.setStyleSheet("""
+            QTextEdit {
+                background-color: #ffffff;
+                color: #000000;
+                border: 1px solid #cccccc;
+                padding: 5px;
+            }
+        """)
+        
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #cccccc;
+                border-radius: 3px;
+                text-align: center;
+                background-color: #ffffff;
+                color: #000000;
+            }
+            QProgressBar::chunk {
+                background-color: #2a82da;
+            }
+        """)
         
     def init_main_tab(self):
         """Initialize the main scanning tab"""
@@ -996,6 +1218,15 @@ class NetworkScanner(QMainWindow):
         advanced_group.setLayout(advanced_layout)
         
         # Network interface selection
+        # Theme toggle
+        theme_layout = QHBoxLayout()
+        self.theme_button = QPushButton("🌙 Dark Mode" if self.dark_mode else "☀️ Light Mode")
+        self.theme_button.clicked.connect(self.toggle_theme)
+        self.theme_button.setStyleSheet("padding: 5px 10px;")
+        theme_layout.addWidget(self.theme_button)
+        theme_layout.addStretch()
+        layout.addLayout(theme_layout)
+        
         interface_layout = QHBoxLayout()
         interface_label = QLabel("Network Interface:")
         self.interface_combo = QComboBox()
@@ -1051,18 +1282,18 @@ class NetworkScanner(QMainWindow):
         self.results_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         
         # Add all elements to main layout
-        main_layout.addLayout(interface_layout)
-        main_layout.addWidget(self.interface_info)
-        main_layout.addWidget(advanced_group)  # Add advanced options group
-        main_layout.addLayout(button_layout)
-        main_layout.addWidget(self.progress_bar)
-        main_layout.addWidget(self.status_label)
-        main_layout.addLayout(log_layout)
-        main_layout.addWidget(self.results_table)
+        layout = QVBoxLayout()
+        layout.addLayout(interface_layout)
+        layout.addWidget(self.interface_info)
+        layout.addWidget(advanced_group)  # Add advanced options group
+        layout.addLayout(button_layout)
+        layout.addWidget(self.progress_bar)
+        layout.addWidget(self.status_label)
+        layout.addLayout(log_layout)
+        layout.addWidget(self.results_table)
         
         # Set the main layout
-        main_widget.setLayout(main_layout)
-        self.setCentralWidget(main_widget)
+        self.main_tab.setLayout(layout)
     
     def get_network_interfaces(self):
         """Get a list of network interfaces with IP addresses"""
