@@ -1,7 +1,7 @@
 PyQt5>=5.15.0
 scapy>=2.5.0
 requests>=2.32.2
-urllib3>=2.2.2 # not directly required, pinned by Snyk to avoid a vulnerability
+urllib3>=2.6.3 # not directly required, pinned by Snyk to avoid a vulnerability
 # Enhanced networking and security
 python-nmap>=0.7.1
 cryptography>=41.0.0
